@@ -140,7 +140,9 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			if m.Content == "!ce" {
 				//Add a player only if it doesn't exist in
 				if !contains(users, m.Author.ID) {
+					initialChannel = m.ChannelID
 					users = append(users, m.Author.ID)
+					s.ChannelMessageSend(initialChannel, "Merci !")
 				}
 
 				if len(users) == MINPLAYER {
