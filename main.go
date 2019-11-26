@@ -3,10 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"math/rand"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -142,7 +144,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 				if !contains(users, m.Author.ID) {
 					initialChannel = m.ChannelID
 					users = append(users, m.Author.ID)
-					s.ChannelMessageSend(initialChannel, "Merci !")
+					s.ChannelMessageSend(initialChannel, fmt.Sprintf("Inscrit ! Il y a %d/%d joueur(s)", len(users), MINPLAYER))
 				}
 
 				if len(users) == MINPLAYER {
@@ -154,6 +156,13 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 }
 
 func startAsking(s *discordgo.Session) {
+	rand.Seed(time.Now().UnixNano())
+
+	for i := len(users) - 1; i > 0; i-- { // Fisher–Yates shuffle
+		j := rand.Intn(i + 1)
+		users[i], users[j] = users[j], users[i]
+	}
+
 	for _, user := range users {
 		dm, err := s.UserChannelCreate(user)
 
