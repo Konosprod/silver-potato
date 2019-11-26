@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -16,9 +15,14 @@ import (
 type Chunck int
 
 const (
-	SUJET = iota
+	CCL = iota
+	CCT
+	GN
+	PROPREL
 	VERBE
-	COMPLEMENT
+	ADVERBE
+	COD
+	CCM
 	LAST
 )
 
@@ -27,43 +31,56 @@ var (
 )
 
 const (
-	MINPLAYER = 3
+	MAXPLAYER = 8
 )
 
-var chunck Chunck = SUJET
-var answers []string = make([]string, LAST, LAST)
-var users []string = make([]string, 0, LAST)
+type entry struct {
+	chunck Chunck
+	userID string
+	answer string
+}
+
+var chunck Chunck = CCL
+var entries []entry = make([]entry, 0, LAST)
 var initialChannel string = ""
 
 func (c Chunck) String() string {
-	return [...]string{"sujet", "verbe", "complément"}[c]
+	return [...]string{
+		"complément circonstanciel de lieu",
+		"complément circonstanciel de temps",
+		"groupe nominal",
+		"propisition relative",
+		"verbe",
+		"adverbe",
+		"complément d'objet direct",
+		"complément circonstenciel de manière",
+	}[c]
 }
 
 func reset() {
-	chunck = SUJET
-	answers = make([]string, LAST, LAST)
-	users = make([]string, 0, LAST)
+	chunck = CCL
 	initialChannel = ""
+	entries = make([]entry, 0, LAST)
 }
 
-func contains(strings []string, s string) bool {
-	for _, v := range strings {
-		if v == s {
-			return true
-		}
-	}
+func indexOf(e []entry, s string) int {
 
-	return false
-}
-
-func indexOf(strings []string, s string) int {
-	for i, v := range strings {
-		if v == s {
+	for i, v := range e {
+		if v.userID == s && v.answer == "" {
 			return i
 		}
 	}
-
 	return -1
+}
+
+func getAnswer(chunck int) string {
+	for _, v := range entries {
+		if int(v.chunck) == chunck {
+			return v.answer
+		}
+	}
+
+	return ""
 }
 
 func init() {
@@ -118,22 +135,26 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if dm, err := isDM(s, m); err == nil {
 		if dm {
 
-			index := indexOf(users, m.Author.ID)
+			index := indexOf(entries, m.Author.ID)
 
 			if index != -1 {
-				answers[index] = m.Content
+				entries[index].answer = m.Content
 				s.ChannelMessageSend(m.ChannelID, "Merci !")
 			}
 
 			done := true
-			for _, a := range answers {
-				if a == "" {
+			for _, e := range entries {
+				if e.answer == "" {
 					done = false
 				}
 			}
 
 			if done {
-				s.ChannelMessageSend(initialChannel, strings.Join(answers, ", "))
+				rep := ""
+				for answer := 0; answer < LAST; answer++ {
+					rep += getAnswer(answer) + " "
+				}
+				s.ChannelMessageSend(initialChannel, rep)
 				reset()
 			}
 
@@ -141,30 +162,52 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 			if m.Content == "!ce" {
 				//Add a player only if it doesn't exist in
-				if !contains(users, m.Author.ID) {
+				if indexOf(entries, m.Author.ID) == -1 {
 					initialChannel = m.ChannelID
-					users = append(users, m.Author.ID)
-					s.ChannelMessageSend(initialChannel, fmt.Sprintf("Inscrit ! Il y a %d/%d joueur(s)", len(users), MINPLAYER))
+
+					//users = append(users, m.Author.ID)
+					entries = append(entries, entry{-1, m.Author.ID, ""})
+					s.ChannelMessageSend(initialChannel, fmt.Sprintf("Inscrit ! Il y a %d joueur(s). %d joueurs max", len(entries), MAXPLAYER))
 				}
 
-				if len(users) == MINPLAYER {
+				if len(entries) == MAXPLAYER {
 					startAsking(s)
 				}
 			}
+
+			if m.Content == "!cs" {
+				startAsking(s)
+			}
 		}
+	}
+}
+
+func fillUsers() {
+	missing := MAXPLAYER - len(entries)
+	fmt.Println(missing)
+	for i := 0; i < missing; i++ {
+		index := rand.Intn(len(entries))
+		user := entries[index]
+		entries = append(entries, user)
 	}
 }
 
 func startAsking(s *discordgo.Session) {
 	rand.Seed(time.Now().UnixNano())
 
-	for i := len(users) - 1; i > 0; i-- { // Fisher–Yates shuffle
-		j := rand.Intn(i + 1)
-		users[i], users[j] = users[j], users[i]
+	if len(entries) < MAXPLAYER {
+		fillUsers()
 	}
 
-	for _, user := range users {
-		dm, err := s.UserChannelCreate(user)
+	for i := len(entries) - 1; i > 0; i-- { // Fisher–Yates shuffle
+		j := rand.Intn(i + 1)
+		entries[i], entries[j] = entries[j], entries[i]
+	}
+
+	for index, user := range entries {
+		dm, err := s.UserChannelCreate(user.userID)
+
+		entries[index].chunck = chunck
 
 		if err != nil {
 			fmt.Println("Error whle creating DM channel, ", err)
